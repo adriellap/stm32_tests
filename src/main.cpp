@@ -1,4 +1,3 @@
-/*
 #include "stm32f1xx_hal.h"
 
 UART_HandleTypeDef huart1;
@@ -100,29 +99,5 @@ while (1) {
 }
 
 return 0;
-}*/
-
-#include <Arduino.h>
-
-void setup() {
-    // Inicializar a comunicação serial a 115200 bps
-    Serial.begin(115200);
-
-    // Configurar o pino PC13 como saída
-    pinMode(PC13, OUTPUT);
-
-    // Enviar "hello world" pela porta serial
-    Serial.println("hello world");
 }
 
-void loop() {
-    // Alternar o estado do LED
-    digitalWrite(PC13, HIGH);
-    delay(500);
-    digitalWrite(PC13, LOW);
-    delay(500);
-
-    // Enviar "hello world" pela porta serial a cada 2 segundos
-    Serial.println("hello world");
-    delay(2000);
-}
