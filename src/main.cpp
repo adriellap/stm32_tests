@@ -1,103 +1,48 @@
-#include "stm32f1xx_hal.h"
+#include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/gpio.h>
+#include <libopencm3/stm32/usart.h>
 
-UART_HandleTypeDef huart1;
+void usart_setup(void) {
+    // Habilitar o clock para GPIOA e USART1
+    rcc_periph_clock_enable(RCC_GPIOA);
+    rcc_periph_clock_enable(RCC_USART1);
 
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_USART1_UART_Init(void);
+    // Configurar os pinos PA9 (TX) e PA10 (RX)
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ,
+                  GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO9);
+    gpio_set_mode(GPIOA, GPIO_MODE_INPUT,
+                  GPIO_CNF_INPUT_FLOAT, GPIO10);
 
-void HAL_UART_MspInit(UART_HandleTypeDef* huart) {
-GPIO_InitTypeDef GPIO_InitStruct = {0};
-if (huart->Instance == USART1) {
-    __HAL_RCC_USART1_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    
-    // PA9 -> USART1_TX, PA10 -> USART1_RX
-    GPIO_InitStruct.Pin = GPIO_PIN_9;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    // Configurar a USART1
+    usart_set_baudrate(USART1, 115200);
+    usart_set_databits(USART1, 8);
+    usart_set_stopbits(USART1, USART_STOPBITS_1);
+    usart_set_mode(USART1, USART_MODE_TX_RX);
+    usart_set_parity(USART1, USART_PARITY_NONE);
+    usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
 
-    GPIO_InitStruct.Pin = GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-}
-}
-
-void MX_USART1_UART_Init(void) {
-huart1.Instance = USART1;
-huart1.Init.BaudRate = 115200;
-huart1.Init.WordLength = UART_WORDLENGTH_8B;
-huart1.Init.StopBits = UART_STOPBITS_1;
-huart1.Init.Parity = UART_PARITY_NONE;
-huart1.Init.Mode = UART_MODE_TX_RX;
-huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-if (HAL_UART_Init(&huart1) != HAL_OK) {
-    // Initialization Error
-    while (1);
-}
+    // Habilitar a USART1
+    usart_enable(USART1);
 }
 
-void SystemClock_Config(void) {
-RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
-RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
-if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-    while (1);
-}
-
-RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
-                            | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
-RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-
-if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
-    while (1);
-}
-}
-
-void MX_GPIO_Init(void) {
-__HAL_RCC_GPIOC_CLK_ENABLE();
-GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-// Configure PC13 (LED)
-GPIO_InitStruct.Pin = GPIO_PIN_13;
-GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-}
-
-void send_string(const char *str) {
-while (*str) {
-    HAL_UART_Transmit(&huart1, (uint8_t *)str++, 1, HAL_MAX_DELAY);
-}
+void usart_send_string(const char *str) {
+    while (*str) {
+        usart_send_blocking(USART1, *str++);
+    }
 }
 
 int main(void) {
-HAL_Init();
-SystemClock_Config();
-MX_GPIO_Init();
-MX_USART1_UART_Init();
+    // Configurar a USART
+    usart_setup();
 
-// Enviar a mensagem "hello world"
-send_string("hello world\n");
+    // Enviar a mensagem "hello world"
+    while (1) {
+        // Enviar "vitor é foda" a cada 2 segundos
+        usart_send_string("hello world\n");
+        for (int i = 0; i < 8000000; i++) { // Aproximadamente 2 segundos de delay
+            __asm__("nop");
+        }
+    }
 
-while (1) {
-    // Enviar "hello world" a cada 2 segundos
-    send_string("hello world\n");
-    HAL_Delay(2000);
+    return 0;
 }
-
-return 0;
-}
-
