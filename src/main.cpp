@@ -1,128 +1,170 @@
-/*
-#include "stm32f1xx_hal.h"
+#include "stm32f1xx.h"
+#include <Arduino.h>  // Inclui para habilitar a interface USB Serial
 
-UART_HandleTypeDef huart1;
+// void delay_ms(uint32_t ms);
+// void LED_Init(void);
+// void LED_Toggle(void);
 
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_USART1_UART_Init(void);
+// void setup() {
+//     // Inicializa o USB Serial para comunicação com o PC
+//     Serial.begin(115200);
 
-void HAL_UART_MspInit(UART_HandleTypeDef* huart) {
-GPIO_InitTypeDef GPIO_InitStruct = {0};
-if (huart->Instance == USART1) {
-    __HAL_RCC_USART1_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+//     // Inicializa o LED no pino PC13
+//     LED_Init();
+
+//     // Mensagem inicial tanto no Serial (USB) quanto na UART
+//     Serial.println("hello world via USB Serial");
+// }
+
+// void loop() {
+//     // Envia uma mensagem pela USB Serial e pela UART1
+//     Serial.println("hello world via USB Serial");
+
+//     // Pisca o LED (para debug)
+//     LED_Toggle();
+
+//     // Atraso de 2 segundos
+//     delay_ms(2000);
+// }
+
+// void delay_ms(uint32_t ms) {
+//     // Função de delay simples (não precisa de alta precisão)
+//     for (uint32_t i = 0; i < ms * 8000; i++) {
+//         __NOP();  // Instrução de no-operation (NOP)
+//     }
+// }
+
+// // Inicializa o LED no pino PC13
+// void LED_Init(void) {
+//     // Habilita o clock para o GPIOC
+//     RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
+
+//     // Configura PC13 como saída push-pull
+//     GPIOC->CRH &= ~(GPIO_CRH_CNF13 | GPIO_CRH_MODE13);  // Limpa bits
+//     GPIOC->CRH |= GPIO_CRH_MODE13_0;  // Configura PC13 como saída de baixa velocidade (2 MHz)
+// }
+
+// // Alterna o estado do LED (PC13)
+// void LED_Toggle(void) {
+//     GPIOC->ODR ^= GPIO_ODR_ODR13;  // Inverte o valor do pino PC13
+// }
+               // Soma das temperaturas no buffer
+
+
+#define BUFFER_SIZE 10  // Tamanho do buffer para a média móvel
+
+int32_t tempBuffer[BUFFER_SIZE];  // Buffer para armazenar as leituras de temperatura
+uint8_t bufferIndex = 0;          // Índice do buffer
+int32_t sum = 0;   
+int32_t minTemperature = 2000;  // Exemplo: -40°C (em décimos de grau)
+int32_t maxTemperature = 3000;  // Exemplo: 125°C (em décimos de grau)
+
+uint16_t analogReadRegister() {
+    ADC1->CR2 |= ADC_CR2_ADON;      // Iniciar conversão
+    while (!(ADC1->SR & ADC_SR_EOC));  // Aguardar o fim da conversão
+    return ADC1->DR;                // Retornar o valor lido
+}
+
+// Função otimizada para converter a leitura ADC diretamente em temperatura
+int32_t adcToTemperature(uint16_t adcValue) {
+    // Fórmula simplificada: (V_adc - 0.76) / 0.0025 + 25
+    // Vamos trabalhar diretamente em mV e evitar ponto flutuante:
+    // Vadc (mV) = (adcValue * 3300) / 4095
+    int32_t Vadc = (adcValue * 3300) / 4095;
+
+    // Cálculo direto da temperatura sem ponto flutuante
+    int32_t temperature = ((Vadc - 760) * 100) / 25 + 2500; // A temperatura está 100x maior (2500 = 25°C)
     
-    // PA9 -> USART1_TX, PA10 -> USART1_RX
-    GPIO_InitStruct.Pin = GPIO_PIN_9;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-}
+    return temperature;
 }
 
-void MX_USART1_UART_Init(void) {
-huart1.Instance = USART1;
-huart1.Init.BaudRate = 115200;
-huart1.Init.WordLength = UART_WORDLENGTH_8B;
-huart1.Init.StopBits = UART_STOPBITS_1;
-huart1.Init.Parity = UART_PARITY_NONE;
-huart1.Init.Mode = UART_MODE_TX_RX;
-huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-if (HAL_UART_Init(&huart1) != HAL_OK) {
-    // Initialization Error
-    while (1);
-}
-}
+// Função para calcular a média móvel
+int32_t calculateMovingAverage(int32_t newTemperature) {
+    // Subtrair o valor mais antigo do somatório
+    sum -= tempBuffer[bufferIndex];
+    
+    // Atualizar o buffer com a nova leitura
+    tempBuffer[bufferIndex] = newTemperature;
+    
+    // Adicionar a nova leitura ao somatório
+    sum += newTemperature;
 
-void SystemClock_Config(void) {
-RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+    // Atualizar o índice do buffer (circular)
+    bufferIndex = (bufferIndex + 1) % BUFFER_SIZE;
 
-RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
-RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
-if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-    while (1);
+    // Retornar a média
+    return sum / BUFFER_SIZE;
 }
 
-RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
-                            | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
-RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+// Função para mapear temperatura para o duty cycle
+uint8_t mapTemperatureToDutyCycle(int32_t temperature) {
+    if (temperature <= minTemperature) return 0;
+    if (temperature >= maxTemperature) return 100;
 
-if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
-    while (1);
+    return (temperature - minTemperature) * 100 / (maxTemperature - minTemperature);
 }
-}
-
-void MX_GPIO_Init(void) {
-__HAL_RCC_GPIOC_CLK_ENABLE();
-GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-// Configure PC13 (LED)
-GPIO_InitStruct.Pin = GPIO_PIN_13;
-GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-}
-
-void send_string(const char *str) {
-while (*str) {
-    HAL_UART_Transmit(&huart1, (uint8_t *)str++, 1, HAL_MAX_DELAY);
-}
-}
-
-int main(void) {
-HAL_Init();
-SystemClock_Config();
-MX_GPIO_Init();
-MX_USART1_UART_Init();
-
-// Enviar a mensagem "hello world"
-send_string("hello world\n");
-
-while (1) {
-    // Enviar "hello world" a cada 2 segundos
-    send_string("hello world\n");
-    HAL_Delay(2000);
-}
-
-return 0;
-}*/
-
-#include <Arduino.h>
 
 void setup() {
-    // Inicializar a comunicação serial a 115200 bps
-    Serial.begin(115200);
+    Serial.begin(9600);
 
-    // Configurar o pino PC13 como saída
-    pinMode(PC13, OUTPUT);
+    // Habilitar o clock do ADC1 e o sensor de temperatura
+    RCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;
 
-    // Enviar "hello world" pela porta serial
-    Serial.println("hello world");
+    // Habilitar o sensor de temperatura e configurar o ADC
+    ADC1->CR2 |= ADC_CR2_TSVREFE;   // Habilita o sensor de temperatura interno
+    ADC1->CR2 |= ADC_CR2_ADON;      // Ligar o ADC1
+    ADC1->CR2 |= ADC_CR2_CONT;      // Modo contínuo
+
+    // Configurar o tempo de amostragem do canal 16 (sensor de temperatura)
+    ADC1->SMPR1 |= ADC_SMPR1_SMP16_2 | ADC_SMPR1_SMP16_1 | ADC_SMPR1_SMP16_0; // Amostragem de 239.5 ciclos
+
+    // Selecionar o canal 16 (sensor de temperatura interno)
+    ADC1->SQR3 = 29;                // Seleciona o canal 16 para a primeira conversão
+    
+    // Calibração do ADC
+    ADC1->CR2 |= ADC_CR2_CAL;       // Iniciar calibração
+    while (ADC1->CR2 & ADC_CR2_CAL); // Esperar até a calibração terminar
+
+    // Inicializar o buffer de temperatura com zero
+    for (int i = 0; i < BUFFER_SIZE; i++) {
+        tempBuffer[i] = 0;
+    }
+    
+    // Configurar o PWM
+    RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;  // Habilitar o clock do Timer1
+    TIM1->PSC = 799;  // Prescaler para reduzir a frequência
+    TIM1->ARR = 100;  // Definir o ARR para controle de duty cycle de 0-100%
+    TIM1->CCR1 = 0;   // Duty cycle inicial 0%
+    TIM1->CCER |= TIM_CCER_CC1E;  // Habilitar canal 1
+    TIM1->CR1 |= TIM_CR1_CEN;     // Ligar o timer
 }
 
 void loop() {
-    // Alternar o estado do LED
-    digitalWrite(PC13, HIGH);
-    delay(500);
-    digitalWrite(PC13, LOW);
-    delay(500);
+    uint16_t adcValue = analogReadRegister();
 
-    // Enviar "hello world" pela porta serial a cada 2 segundos
-    Serial.println("hello world");
-    delay(2000);
+    // Calcular a temperatura (em décimos de grau para economizar memória)
+    int32_t currentTemperature = adcToTemperature(adcValue);
+
+    // Calcular a média móvel
+    int32_t averageTemperature = calculateMovingAverage(currentTemperature);
+
+    // Mapear a temperatura para o duty cycle
+    uint8_t dutyCycle = mapTemperatureToDutyCycle(averageTemperature);
+
+    // Ajustar o duty cycle do PWM
+    TIM1->CCR1 = dutyCycle;  // Ajustar duty cycle do PWM com base na temperatura
+
+    // Exibir os resultados no monitor serial
+    Serial.print("ADC Value: ");
+    Serial.print(adcValue);
+    Serial.print(" | Current Temperature: ");
+    Serial.print(averageTemperature / 100);
+    Serial.print(".");
+    Serial.print(averageTemperature % 100);
+    Serial.print(" °C | Duty Cycle: ");
+    Serial.print(dutyCycle);
+    Serial.println(" %");
+
+
+    delay(1000);
 }
